@@ -22,7 +22,6 @@ namespace PostbirdTAS
         private bool seekInputActive;
         private string seekInputBuffer = "";
         private bool isFastForwarding;
-        private StateSnapshot? seekAnchor; // etat au frame 0 de la lecture
 
         private float f2HoldTimer;
         private const float HoldThreshold = 0.3f;     // delai avant que la repetition demarre
@@ -44,16 +43,136 @@ namespace PostbirdTAS
         private static readonly string MoviePath =
             Path.Combine(Paths.GameRootPath, "PostbirdTAS_movie.tas");
 
+        private Rect windowRect = new Rect(20, 20, 220, 320);
+        private bool showUI = true;
+
+        private void OnGUI()
+        {
+            if (!showUI) return;
+            windowRect = GUI.Window(0, windowRect, (GUI.WindowFunction)DrawWindow, "PostbirdTAS");
+        }
+
+        private void DrawWindow(int id)
+        {
+            GUILayout.Label($"Frame avance : {IsFrameAdvanceMode}");
+            GUILayout.Label($"Enregistrement : {IsRecording}");
+            GUILayout.Label($"Lecture : {IsPlayingBack} (frame {playbackIndex})");
+            GUILayout.Label($"Edition : {IsEditMode}");
+
+            GUILayout.Space(8);
+
+            if (GUILayout.Button(IsFrameAdvanceMode ? "Reprendre (F1)" : "Pause (F1)"))
+                IsFrameAdvanceMode = !IsFrameAdvanceMode;
+
+            if (GUILayout.Button("Avancer 1 frame (F2)") && IsFrameAdvanceMode)
+                stepRequested = true;
+
+            GUILayout.Space(4);
+
+            if (GUILayout.Button("Save state (F5)"))
+                saveStates.SaveState(0);
+
+            if (GUILayout.Button("Load state (F7)"))
+                saveStates.LoadState(0);
+
+            GUILayout.Space(4);
+
+            if (GUILayout.Button(IsRecording ? "Stop enregistrement (F9)" : "Enregistrer (F9)"))
+                ToggleRecording();
+
+            if (GUILayout.Button(IsPlayingBack ? "Stop lecture (F10)" : "Lire movie (F10)"))
+                TogglePlayback();
+
+            GUILayout.Space(4);
+
+            GUILayout.BeginHorizontal();
+            GUILayout.Label("Frame cible:", GUILayout.Width(70));
+            // Affichage en lecture seule uniquement : la saisie se fait via les
+            // touches 0-9/Retour arriere lues directement par NativeKeys (cf.
+            // HandleHotkeys), pas via ce widget. Un vrai GUILayout.TextField/
+            // GUI.TextField plante ici sous IL2Cpp : UnityEngine.GUI.DoTextField
+            // appelle UnityEngine.GUIStateObjects.GetStateObject, une methode
+            // dont Il2CppInterop echoue a reconstruire le "unstripping"
+            // ("System.NotSupportedException: Method unstripping failed"). On
+            // evite donc tout appel a GUI.TextField/GUILayout.TextField.
+            GUILayout.Label(seekInputActive
+                ? (string.IsNullOrEmpty(seekInputBuffer) ? "_" : seekInputBuffer)
+                : "(F3)", GUILayout.Width(60));
+            if (GUILayout.Button("Aller") && int.TryParse(seekInputBuffer, out int target))
+                SeekToFrame(target);
+            GUILayout.EndHorizontal();
+
+            GUILayout.Space(4);
+
+            if (GUILayout.Button(IsEditMode ? "Quitter edition (F4)" : "Editer (F4)"))
+                IsEditMode = !IsEditMode;
+
+            GUI.DragWindow();
+        }
+
+
         private void Awake()
         {
             Instance = this;
         }
 
         private bool stepping;
+        private bool manualPhysicsActive;
+
+        // En mode frame-advance (et pendant un seek), on prend la main sur la
+        // simulation physique au lieu de laisser Unity l'appeler automatiquement.
+        // C'est ce qui rend l'avance frame par frame deterministe : avec la
+        // simulation automatique, le nombre de FixedUpdate declenches au cours
+        // d'une seule frame de jeu depend du temps reel ecoule (accumulateur de
+        // pas fixe d'Unity), donc selon le framerate du moment un meme appui sur
+        // F2 pouvait produire 0, 1 ou 2 pas de physique. C'etait la cause du bug
+        // d'acceleration du velo non geree de facon fiable en frame par frame
+        // (le Rigidbody du velo recevait zero, une, ou deux fois sa force
+        // d'acceleration pour une seule frame "logique"). Avec
+        // Physics.autoSimulation = false, Unity n'appelle plus jamais
+        // FixedUpdate tout seul : seul un appel explicite a Physics.Simulate(...)
+        // declenche un pas, et on en fait exactement un par frame avancee.
+        //
+        // Note : Physics.simulationMode/SimulationMode (Unity 2020.2+) n'existe
+        // pas dans la version d'Unity utilisee par ce jeu (erreur de build
+        // CS0117/CS0103) ; on utilise donc l'API plus ancienne Physics.autoSimulation,
+        // qui a le meme effet. Pour la meme raison, Physics.Simulate retourne
+        // void ici (et non bool comme dans les versions recentes) : pas de test
+        // sur sa valeur de retour.
+        private void EnableManualPhysics()
+        {
+            if (manualPhysicsActive) return;
+            Physics.autoSimulation = false;
+            manualPhysicsActive = true;
+        }
+
+        private void DisableManualPhysics()
+        {
+            if (!manualPhysicsActive) return;
+            Physics.autoSimulation = true;
+            manualPhysicsActive = false;
+        }
+
+        private void OnDestroy()
+        {
+            // Au cas ou le mod serait decharge pendant qu'on est en pause/seek :
+            // on rend la main au moteur pour ne pas laisser le jeu fige ou avec
+            // une simulation physique manuelle orpheline.
+            DisableManualPhysics();
+            Time.timeScale = 1f;
+        }
 
         private void Update()
         {
             HandleHotkeys();
+
+            if (isFastForwarding)
+            {
+                // FastForwardCoroutine pilote elle-meme timeScale et le mode de
+                // simulation physique pendant un seek (F3) : on ne touche a
+                // rien ici pour ne pas lui rentrer dedans.
+                return;
+            }
 
             if (NativeKeys.IsDown(NativeKeys.VK_F4))
             {
@@ -63,11 +182,12 @@ namespace PostbirdTAS
 
             if (IsFrameAdvanceMode)
             {
+                EnableManualPhysics();
+
                 // Tant qu'on n'est pas en train d'executer un pas, le jeu reste
-                // completement fige (Update ET FixedUpdate suspendus par timeScale=0).
-                // Ca marche quelle que soit la facon dont le jeu deplace le joueur
-                // (FixedUpdate/Rigidbody ou Update/Time.deltaTime), contrairement a
-                // un simple Physics.Simulate() manuel qui ne couvre que la physique.
+                // completement fige : Update est fige via timeScale=0, et
+                // FixedUpdate ne se declenche plus du tout tout seul grace au
+                // mode Script ci-dessus.
                 if (!stepping)
                 {
                     Time.timeScale = 0f;
@@ -81,19 +201,29 @@ namespace PostbirdTAS
             }
             else
             {
+                DisableManualPhysics();
                 Time.timeScale = 1f;
             }
         }
 
-        // Laisse passer exactement une frame moteur a vitesse normale, puis
-        // re-fige le jeu. C'est l'equivalent d'un "frame advance" generique.
+        // Laisse passer exactement une frame moteur a vitesse normale (Update),
+        // et exactement UN pas de physique deterministe (FixedUpdate), puis
+        // re-fige le jeu. C'est l'equivalent d'un "frame advance" generique,
+        // mais fiable quel que soit le framerate reel de la machine.
         private System.Collections.IEnumerator StepOneFrameCoroutine()
         {
             stepping = true;
             Time.timeScale = 1f;
 
-            yield return new WaitForFixedUpdate(); // garantit qu'un FixedUpdate s'execute
-            yield return null;                      // puis laisse Update suivre aussi
+            // Pas physique manuel et deterministe : toujours exactement un seul
+            // pas de duree Time.fixedDeltaTime, peu importe le framerate reel.
+            // C'est ce qui corrige l'acceleration du velo qui ne s'appliquait
+            // pas de facon fiable en mode frame par frame. (Physics.Simulate
+            // retourne void dans la version d'Unity de ce jeu, pas bool : pas
+            // de test sur sa valeur de retour ici.)
+            Physics.Simulate(Time.fixedDeltaTime);
+
+            yield return null; // laisse un Update (rendu + logique non-physique) s'executer
 
             Time.timeScale = 0f;
             stepping = false;
@@ -248,14 +378,37 @@ namespace PostbirdTAS
         private System.Collections.IEnumerator FastForwardCoroutine(int targetFrame)
         {
             isFastForwarding = true;
-            IsFrameAdvanceMode = false; // on sort du mode pause manuel pendant le seek
-            Time.timeScale = 20f;       // accelere la simulation; ajuste selon stabilite physique
+            IsFrameAdvanceMode = false; // gere par cette coroutine pendant le seek, restaure a la fin
+            EnableManualPhysics();      // un pas physique exact par frame rejouee, cf. StepOneFrameCoroutine
+            Time.timeScale = 1f;        // sert uniquement a faire avancer Update(), pas la physique
+
+            // On enchaine plusieurs pas physiques avant de relacher la main au
+            // moteur pour le rendu. Avant, Time.timeScale = 20f laissait Unity
+            // declencher 0, 1 ou plusieurs FixedUpdate par frame de rendu de
+            // facon imprevisible (selon le framerate reel), ce qui appliquait
+            // l'acceleration du velo un nombre de fois different de
+            // l'enregistrement original et faisait diverger la trajectoire
+            // rejouee de la trajectoire reelle. Ici, chaque frame de la movie
+            // correspond toujours a exactement un appel Physics.Simulate, comme
+            // pendant l'enregistrement initial : le seek reproduit fidelement
+            // la meme physique, juste plus vite.
+            const int stepsPerRenderedFrame = 50;
+            int stepsThisChunk = 0;
 
             while (playbackIndex < targetFrame && IsPlayingBack)
             {
-                yield return null;
+                Physics.Simulate(Time.fixedDeltaTime);
                 AdvanceRecordingOrPlayback();
+
+                if (++stepsThisChunk >= stepsPerRenderedFrame)
+                {
+                    stepsThisChunk = 0;
+                    yield return null; // garde l'UI/le rendu reactifs pendant un long seek
+                }
             }
+
+            if (stepsThisChunk > 0)
+                yield return null;
 
             Time.timeScale = 0f;
             IsFrameAdvanceMode = true; // on re-fige en mode frame-advance pour pouvoir inspecter/continuer

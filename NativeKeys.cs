@@ -16,12 +16,13 @@ namespace PostbirdTAS
         // Codes de touches virtuelles Windows (VK_*) utilises par le mod.
         public const int VK_F1 = 0x70;
         public const int VK_F2 = 0x71;
-        public const int VK_F3 = 0x72;     // deja existant mais inutilise: on l'utilise pour activer la saisie
+        public const int VK_F3 = 0x72;
         public const int VK_F4 = 0x73;
         public const int VK_F5 = 0x74;
         public const int VK_F7 = 0x76;
         public const int VK_F9 = 0x78;
         public const int VK_F10 = 0x79;
+        public const int VK_F12 = 0x7B;
         public const int VK_RETURN = 0x0D;
         public const int VK_BACK = 0x08;
         public const int VK_0 = 0x30;
