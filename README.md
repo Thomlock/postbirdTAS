@@ -1,7 +1,8 @@
 # PostbirdTAS
 
 Mod BepInEx (IL2CPP) pour faire du tool-assisted speedrun sur *Postbird in
-Provence*. Fournit : pause/avance frame par frame, save states, et
+Provence*. Fournit : pause/avance frame par frame, save states, rewind
+automatique, saut a une frame precise, edition d'un enregistrement, et
 enregistrement/lecture d'une sequence d'inputs ("movie").
 
 ## Ce qui est verifie vs. ce qui ne l'est pas
@@ -57,22 +58,61 @@ environnement. Le mod fonctionne donc en deux couches :
 | Touche | Action |
 |---|---|
 | F1 | Active/desactive le mode pause + avance frame |
-| F2 | Avance d'une frame (uniquement si F1 est actif) |
+| F2 | Avance d'une frame. Maintenue, avance automatiquement a 5 frames/seconde apres un court delai |
+| F3 | Active/desactive la saisie d'un numero de frame cible (pendant la lecture d'une movie) |
+| F4 | Active/desactive le mode edition d'une movie chargee (exige F10 + F1 actifs) |
 | F5 | Sauvegarde l'etat courant (slot 0) |
 | F7 | Recharge l'etat sauvegarde (slot 0) |
 | F9 | Demarre / arrete l'enregistrement d'une movie |
 | F10 | Lit la derniere movie enregistree (`PostbirdTAS_movie.tas`, a la racine du jeu) |
+| 0-9 | (saisie F3 active) compose le numero de frame cible |
+| Retour arriere | (saisie F3 active) efface le dernier chiffre tape |
+| Entree | (saisie F3 active) valide le numero et lance le saut (rejoue les inputs en accelere) |
+| Fleches | (mode edition F4 actif) ajustent Horizontal/Vertical de la frame courante par pas de 0.1 |
+| J / I / B | (mode edition F4 actif) togglent Jump / Interact / Brake de la frame courante |
+| S | (mode edition F4 actif) sauvegarde la movie modifiee sur disque |
 
 Workflow typique : F1 pour passer en pause/avance frame, F9 pour enregistrer,
-F2 pour avancer d'une frame en testant des inputs, F5/F7 pour revenir en
-arriere et reessayer un passage jusqu'a trouver l'optimal, F9 pour arreter
-l'enregistrement, F10 pour relire la movie complete a vitesse normale et la
-capturer en video.
+F2 pour avancer d'une frame (ou la maintenir pour un defilement rapide a 5
+fps) en testant des inputs, F5/F7 pour revenir en arriere et reessayer un
+passage jusqu'a trouver l'optimal, F9 pour arreter l'enregistrement, F10
+pour relire la movie complete.
+
+Pendant une lecture (F10), F3 permet de sauter directement a une frame
+donnee : tape le numero puis valide avec Entree. Le saut recharge l'etat du
+debut de la movie puis rejoue les inputs en accelere jusqu'a la frame visee
+(c'est la seule methode fiable, le jeu n'etant pas "seekable" sans rejouer
+sa simulation), avant de se refiger automatiquement en mode pause.
+
+Pour corriger une movie existante sans tout recommencer : charge-la avec
+F10, navigue jusqu'a la frame a corriger (F2/F3), active F4, ajuste les
+inputs avec les fleches et J/I/B, puis sauvegarde avec S. Recharge ensuite
+la movie (F10 a nouveau) pour verifier le resultat.
+
+## Rewind automatique
+
+En plus des save states manuels (F5/F7), le mod capture automatiquement un
+historique glissant de l'etat du joueur a chaque frame avancee (limite a
+600 frames, soit environ 10 secondes a 60 fps, pour eviter une consommation
+memoire excessive). Cet historique sert de base au systeme de seek (F3) et
+peut etre etendu a un rewind pas-a-pas independant des save states fixes.
 
 ## Limites connues
 
-- Un seul slot de save state pour l'instant (facile a etendre : passe un
-  numero de slot different a `SaveState`/`LoadState`).
+- Un seul slot de save state manuel pour l'instant (facile a etendre :
+  passe un numero de slot different a `SaveState`/`LoadState`). Le slot 99
+  est reserve en interne comme ancre pour le systeme de seek (F3).
+- Le saut a une frame (F3) ne peut avancer qu'en rejouant reellement les
+  inputs depuis le debut de la movie (en `timeScale` accelere) : ce n'est
+  pas instantane sur une longue movie, et une vitesse de simulation trop
+  elevee peut perturber la physique (a ajuster dans `FastForwardCoroutine`
+  si tu observes des comportements instables apres un saut).
+- L'avance frame par frame (F2) attend explicitement un `FixedUpdate` via
+  `WaitForFixedUpdate` avant de re-figer le jeu, pour garantir que la
+  logique physique (acceleration du velo, etc.) s'execute reellement. Si tu
+  reintroduis un simple `yield return null`, le velo peut sembler avancer
+  sans jamais gagner de vitesse, le `FixedUpdate` du jeu n'etant pas garanti
+  de se declencher entre deux frames de rendu.
 - Les noms d'axes par defaut ("Horizontal", "Vertical", "Jump", "Interact",
   "Brake") sont des suppositions raisonnables a verifier/adapter.
 - Aucune categorie TAS n'existe sur la page speedrun.com du jeu : ce sera
