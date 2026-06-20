@@ -1,0 +1,63 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net6.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>disable</Nullable>
+    <AssemblyName>PostbirdTAS</AssemblyName>
+    <RootNamespace>PostbirdTAS</RootNamespace>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <Platforms>x64</Platforms>
+  </PropertyGroup>
+
+  <!--
+    1) Installe BepInEx 6 IL2CPP (build "bleeding edge") dans le dossier du jeu
+       (à côté de PostbirdInProvence.exe) et lance le jeu une fois : ça génère
+       automatiquement le dossier BepInEx/interop/ avec les DLL "managées"
+       reconstituées à partir de GameAssembly.dll + global-metadata.dat.
+    2) Mets le chemin vers ce dossier ci-dessous.
+  -->
+  <PropertyGroup>
+    <GameInteropPath>C:\Program Files (x86)\Postbird In Provence2\BepInEx\interop</GameInteropPath>
+    <GameManagedPath>C:\Program Files (x86)\Postbird In Provence2\BepInEx\core</GameManagedPath>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="BepInEx.Unity.IL2CPP" Version="6.0.0-be.*" IncludeAssets="compile" />
+    <PackageReference Include="BepInEx.PluginInfoProps" Version="2.*" />
+    <PackageReference Include="Il2CppInterop.Runtime" Version="1.5.1-ci.829" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Modules Unity de base -->
+    <Reference Include="Il2Cppmscorlib">
+      <HintPath>$(GameInteropPath)\Il2Cppmscorlib.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.CoreModule">
+      <HintPath>$(GameInteropPath)\UnityEngine.CoreModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.PhysicsModule">
+      <HintPath>$(GameInteropPath)\UnityEngine.PhysicsModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.InputLegacyModule">
+      <HintPath>$(GameInteropPath)\UnityEngine.InputLegacyModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <!-- Le code du jeu lui-même (classes Bike, MainPlayerController, DeliveryManager, ...) -->
+    <Reference Include="Assembly-CSharp">
+      <HintPath>$(GameInteropPath)\Assembly-CSharp.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+  <!-- Copie automatiquement la DLL compilée dans BepInEx/plugins du jeu -->
+  <Target Name="CopyToPlugins" AfterTargets="Build">
+    <Copy SourceFiles="$(OutputPath)$(AssemblyName).dll"
+          DestinationFolder="$(GameManagedPath)\..\plugins\PostbirdTAS\"
+          SkipUnchangedFiles="true" />
+  </Target>
+
+</Project>
