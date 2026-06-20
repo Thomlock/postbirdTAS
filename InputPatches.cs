@@ -51,13 +51,53 @@ namespace PostbirdTAS
                          : 0f;
                 return false; // on saute l'appel original
             }
+
+            if (tas.IsFrameAdvanceMode)
+            {
+                // C'est ici que se jouait le bug "acceleration manette" :
+                // GetAxis() applique le lissage Sensitivity/Gravity d'Unity,
+                // qui se base sur le temps reel ecoule. Sur clavier ce lissage
+                // est configure par defaut tres rapide (Sensitivity tres
+                // elevee + Snap), donc invisible meme sur un seul tick fige.
+                // Sur manette, il est volontairement plus progressif pour un
+                // ressenti analogique, et n'a pas le temps de monter entre
+                // deux pas geles : le jeu recevait une deflexion quasi nulle
+                // a chaque frame, donc peu/pas d'acceleration. On bypasse ce
+                // lissage en redirigeant systematiquement le jeu vers la
+                // valeur BRUTE (GetAxisRaw, jamais lissee par Unity, et que
+                // GetAxisRaw_Prefix laisse passer tel quel hors lecture de
+                // movie - pas de recursion ici).
+                __result = Input.GetAxisRaw(axisName);
+                return false;
+            }
+
             return true;
         }
 
         [HarmonyPatch(typeof(Input), nameof(Input.GetAxisRaw))]
         [HarmonyPrefix]
         private static bool GetAxisRaw_Prefix(string axisName, ref float __result)
-            => GetAxis_Prefix(axisName, ref __result);
+        {
+            var tas = TasController.Instance;
+            if (tas == null) return true;
+
+            if (tas.IsPlayingBack && tas.HasCurrentFrame())
+            {
+                var frame = tas.GetCurrentFrame();
+                __result = axisName == "Horizontal" ? frame.Horizontal
+                         : axisName == "Vertical" ? frame.Vertical
+                         : 0f;
+                return false;
+            }
+
+            // GetAxisRaw n'est de toute facon jamais lissee par Unity : rien
+            // a corriger ici hors lecture de movie, on laisse l'appel
+            // original (c'est aussi ce que GetAxis_Prefix appelle ci-dessus
+            // pour bypasser le lissage, donc important que cette methode ne
+            // redirige plus vers GetAxis_Prefix comme avant, sous peine de
+            // recursion infinie).
+            return true;
+        }
 
         [HarmonyPatch(typeof(Input), nameof(Input.GetButton))]
         [HarmonyPrefix]
