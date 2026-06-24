@@ -42,7 +42,7 @@ environnement. Le mod fonctionne donc en deux couches :
    
    Ca genere `BepInEx/interop/*.dll`, les assemblies managees reconstituees
    a partir de `GameAssembly.dll`.
-7. Met le fichier a la racine du jeu. 
+7. Décompresse le fichier du mod(postbirdTAS) à la racine du jeu. 
    
 ## Compilation
 
