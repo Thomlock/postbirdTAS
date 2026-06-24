@@ -37,8 +37,9 @@ environnement. Le mod fonctionne donc en deux couches :
    `PostbirdInProvence.exe` (de base il est dans Program Files (x86))).
    
 5. Lance le jeu une fois, attends l'arrivee au menu principal, puis quitte.
+
    Si le jeu ne se lance pas lance le en administrateur depuis le fichier exe
-   du jeu
+   du jeu. Si tu as ce probleme il faudra le faire a chaque lancement de jeu
    
    Ca genere `BepInEx/interop/*.dll`, les assemblies managees reconstituees
    a partir de `GameAssembly.dll`.
