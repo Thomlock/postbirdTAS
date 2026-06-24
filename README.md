@@ -32,27 +32,29 @@ environnement. Le mod fonctionne donc en deux couches :
 
 1. Installe le jeu normalement, puis telecharge **BepInEx 6 IL2CPP (build
    bleeding edge)** : https://builds.bepinex.dev/projects/bepinex_be
-2. Decompresse son contenu directement dans le dossier du jeu (a cote de
-   `PostbirdInProvence.exe`).
-3. Lance le jeu une fois, attends l'arrivee au menu principal, puis quitte.
+   Peut importe la version de BepInEx il faut juste quelle soit en IL2CPP
+3. Decompresse son contenu directement dans le dossier du jeu (a cote de
+   `PostbirdInProvence.exe` (de base il est dans Program Files (x86))).
+   
+5. Lance le jeu une fois, attends l'arrivee au menu principal, puis quitte.
+   Si le jeu ne se lance pas lance le en administrateur depuis le fichier exe
+   du jeu
+   
    Ca genere `BepInEx/interop/*.dll`, les assemblies managees reconstituees
    a partir de `GameAssembly.dll`.
-4. Ouvre `BepInEx/interop/Assembly-CSharp.dll` dans **dnSpy** (ou ILSpy) et
-   cherche `MainPlayerController` : verifie le namespace exact, et les vrais
-   noms/types des champs de vitesse/etat. Corrige `CandidateFieldNames` dans
-   `SaveStateManager.cs` et les noms d'axes dans `InputPatches.cs` si besoin
-   (regarde aussi Edit > Project Settings > Input Manager si tu as le projet
-   source, sinon les logs de `RecordAxisSample`/`RecordButtonSample` en mode
-   enregistrement te diront quels axes sont reellement interroges).
-
+7. Met le fichier a la racine du jeu. 
+   
 ## Compilation
 
 1. Ouvre `PostbirdTAS.csproj`, modifie `GameInteropPath` et `GameManagedPath`
    pour pointer vers ton dossier `BepInEx` genere a l'etape 0.
-2. `dotnet build -c Release` (ou ouvre le dossier dans Visual Studio /
+   
+3. `dotnet build -c Release` (ou ouvre le dossier dans Visual Studio /
    Rider).
-3. La DLL compilee est copiee automatiquement dans
+   
+5. La DLL compilee est copiee automatiquement dans
    `<jeu>/BepInEx/plugins/PostbirdTAS/PostbirdTAS.dll`.
+4
 
 ## Touches
 
